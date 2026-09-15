@@ -1,0 +1,7 @@
+gunicorn
+django
+celery
+redis
+requests
+python-telegram-bot
+gunicorn
