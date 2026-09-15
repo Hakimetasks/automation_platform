@@ -1,11 +1,14 @@
 from django.db import models
+from django.utils import timezone
+from datetime import timedelta
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, phone_number, password=None, **extra_fields):
         if not phone_number:
             raise ValueError('The Phone Number field must be set')
-        phone_number = phone_number.strip()
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
         user = self.model(phone_number=phone_number, **extra_fields)
         if password:
             user.set_password(password)
@@ -19,13 +22,22 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', True)
         return self.create_user(phone_number, password, **extra_fields)
 
-class User(AbstractBaseUser, PermissionsMixin):
+class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_number = models.CharField(max_length=15, unique=True)
-    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    is_frozen = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    date_joined = models.DateTimeField(auto_now_add=True)
+
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name='custom_user_groups',
+        blank=True
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='custom_user_permissions',
+        blank=True
+    )
 
     objects = CustomUserManager()
 
@@ -35,16 +47,24 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.phone_number
 
-class AdCampaign(models.Model):
-    advertiser = models.ForeignKey(User, on_delete=models.CASCADE, related_name='campaigns')
+class TaskExpiryWindow(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    expiry_duration_hours = models.IntegerField(default=24)
+    is_expired = models.BooleanField(default=False)
+
+    def check_and_update_expiry(self):
+        expiration_time = self.created_at + timedelta(hours=self.expiry_duration_hours)
+        if timezone.now() > expiration_time:
+            self.is_expired = True
+            self.save()
+            print(f"[SECURITY SYNC]: Task has EXPIRED.")
+            return True
+        return self.is_expired
+
+class Advertisement(models.Model):
     title = models.CharField(max_length=255)
-    ad_view_time = models.IntegerField(default=10)
-    budget = models.DecimalField(max_digits=10, decimal_places=2)
+    content = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-class ReferenceCheck(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    reference_number = models.CharField(max_length=50, unique=True)
-    is_verified = models.BooleanField(default=False)
-    attempts = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return self.title
